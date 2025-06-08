@@ -53,11 +53,13 @@ function App() {
 
   // Reset the session
   const handleReset = () => {
+    setMemes([]); // Clear existing memes
     setCurrentMemeIndex(0);
     setBrainrotLevel(0);
     setLaughCount(0);
     setIsSessionEnded(false);
-    loadMoreMemes(); // Load fresh memes
+    setIsLoading(true); // Show loading state while fetching new memes
+    loadMoreMemes().then(() => setIsLoading(false)); // Load fresh memes
   };
 
   // Load initial memes on component mount
