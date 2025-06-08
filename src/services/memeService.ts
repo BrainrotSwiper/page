@@ -4,29 +4,67 @@ import { Meme } from '../types/meme';
 let usedMemeIds = new Set<string>();
 let usedSubreddits = new Set<string>();
 
+// Inappropriate content filters
+const INAPPROPRIATE_WORDS = new Set([
+  'nsfw',
+  'porn',
+  'sex',
+  'sexy',
+  'nude',
+  'naked',
+  'onlyfans',
+  'horny',
+  'boob',
+  'ass',
+  'penis',
+  'dick',
+  'cock',
+  'pussy',
+  'vagina',
+  'hentai',
+  'rule34',
+  'lewd',
+  'explicit',
+  'xxx',
+  'adult',
+  'erotic',
+  'sexual',
+  'fetish',
+  'bdsm',
+  'kinky',
+  'thot',
+  'slut',
+  'whore',
+  'milf',
+  'dildo',
+  'fuck',
+  'shit',
+  'cum',
+  'masturbat'
+]);
+
+// Safe meme subreddits that typically have cleaner content
 const SUBREDDITS = [
-  'shitposting',
-  'whenthe',
-  'okbuddyretard',
-  'comedyepilepsy',
-  'ComedyNecrophilia',
-  '196',
+  'wholesomememes',
+  'dankmemes',
+  'me_irl',
+  'meirl',
+  'memes',
+  'antimeme',
+  'bonehurtingjuice',
   'surrealmemes',
-  'doodoofard',
-  'comedyheaven',
-  'ihaveihaveihavereddit',
-  'SquarePosting',
-  'wordington',
-  'LesbianInsectBrothel',
-  'gayspiderbrothel',
-  '21stCenturyHumour',
-  'yescompanionimbecil',
-  'thomastheplankengine',
-  'ComedyBuddhism',
-  'skamtebord',
-  'UnfunnyHellhole',
-  'tech1e',
-  'comedynecromancy'
+  'historymemes',
+  'programmerhumor',
+  'techhumor',
+  'mathmemes',
+  'sciencememes',
+  'physicsmemes',
+  'chemistrymemes',
+  'biologymemes',
+  'engineeringmemes',
+  'speedoflobsters',
+  'antimeme',
+  'whenthe'
 ];
 
 type SortType = 'hot' | 'new' | 'top' | 'rising';
@@ -66,10 +104,42 @@ const getTimeParameter = (): string => {
   return times[Math.floor(Math.random() * times.length)];
 };
 
+const containsInappropriateContent = (text: string): boolean => {
+  // Convert to lowercase for case-insensitive matching
+  const lowerText = text.toLowerCase();
+  
+  // Check for inappropriate words
+  for (const word of INAPPROPRIATE_WORDS) {
+    if (lowerText.includes(word)) {
+      return true;
+    }
+  }
+
+  // Check for common inappropriate patterns
+  const inappropriatePatterns = [
+    /\b(18|19|21|23)\+/i,          // Age restrictions
+    /not safe for work/i,           // NSFW full form
+    /gone\s*wild/i,                 // GoneWild variations
+    /only\s*fans?/i,                // OnlyFans variations
+    /\bp\*+y\b/i,                   // Censored inappropriate words
+    /\bs\*+y\b/i,
+    /\bn\*+e\b/i,
+    /\ba\*+s\b/i,
+    /\bb\*+s\b/i,
+    /\[nsfw\]/i,                    // NSFW tag
+    /\[18\+\]/i,                    // Age restriction tag
+    /\[adult\]/i,                   // Adult content tag
+    /\[explicit\]/i,                // Explicit content tag
+    /\[mature\]/i                   // Mature content tag
+  ];
+
+  return inappropriatePatterns.some(pattern => pattern.test(lowerText));
+};
+
 export const fetchMemes = async (count: number = 25): Promise<Meme[]> => {
   try {
     // Get multiple subreddits for variety
-    const selectedSubreddits = getRandomSubreddits(4); // Increased to 4 subreddits
+    const selectedSubreddits = getRandomSubreddits(4);
     const sortType = getRandomSortType();
     const timeParam = sortType === 'top' ? `&t=${getTimeParameter()}` : '';
     
@@ -101,6 +171,10 @@ export const fetchMemes = async (count: number = 25): Promise<Meme[]> => {
             !post.data.stickied && // Skip pinned posts
             !post.data.over_18 && // Skip NSFW content
             post.data.score > 100 && // Minimum score threshold
+            !post.data.spoiler && // Skip spoiler content
+            !post.data.is_video && // Skip videos
+            !containsInappropriateContent(post.data.title) && // Check title
+            !containsInappropriateContent(post.data.selftext || '') && // Check post text
             (
               post.data.post_hint === 'image' ||
               url.endsWith('.jpg') ||
@@ -110,7 +184,9 @@ export const fetchMemes = async (count: number = 25): Promise<Meme[]> => {
             ) &&
             !url.includes('gallery') && // Skip gallery posts
             !url.includes('v.redd.it') && // Skip video posts
-            post.data.title.length < 300 // Skip extremely long titles
+            post.data.title.length < 300 && // Skip extremely long titles
+            !url.includes('imgur.com/a/') && // Skip imgur albums
+            !url.includes('/comments/') // Skip comment links
           );
 
           // Track used meme IDs
