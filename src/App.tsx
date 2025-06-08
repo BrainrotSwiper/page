@@ -12,21 +12,35 @@ function App() {
   const [isSessionEnded, setIsSessionEnded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   // Load more memes when we're running low
   const loadMoreMemes = async () => {
     try {
       setIsLoading(true);
       const newMemes = await fetchMemes(25);
+      
       if (newMemes.length === 0) {
-        setError('No more fresh memes found. Try resetting your brain.');
+        if (retryCount < 3) {
+          setRetryCount(prev => prev + 1);
+          await loadMoreMemes();
+          return;
+        }
+        setError('No memes found. Try refreshing or resetting your brain.');
         return;
       }
+      
       setMemes(prevMemes => [...prevMemes, ...newMemes]);
       setError(null);
+      setRetryCount(0);
     } catch (err) {
-      setError('Failed to load more memes. Your brain might be too rotted.');
       console.error('Error loading memes:', err);
+      if (retryCount < 3) {
+        setRetryCount(prev => prev + 1);
+        await loadMoreMemes();
+        return;
+      }
+      setError('Failed to load memes. Your brain might be too rotted.');
     } finally {
       setIsLoading(false);
     }
@@ -66,6 +80,8 @@ function App() {
     setBrainrotLevel(0);
     setLaughCount(0);
     setIsSessionEnded(false);
+    setError(null);
+    setRetryCount(0);
     resetMemeTracking(); // Reset meme tracking
     
     try {
@@ -77,11 +93,18 @@ function App() {
       setMemes(freshMemes);
       setError(null);
     } catch (err) {
-      setError('Failed to load fresh memes. Try again.');
       console.error('Error loading fresh memes:', err);
+      setError('Failed to load fresh memes. Try again.');
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Handle retry
+  const handleRetry = () => {
+    setError(null);
+    setRetryCount(0);
+    loadMoreMemes();
   };
 
   // Load initial memes on component mount
@@ -97,8 +120,8 @@ function App() {
         setMemes(initialMemes);
         setError(null);
       } catch (err) {
-        setError('Failed to load memes. Try resetting your brain.');
         console.error('Error loading initial memes:', err);
+        setError('Failed to load memes. Try refreshing the page.');
       } finally {
         setIsLoading(false);
       }
@@ -142,7 +165,15 @@ function App() {
         {isLoading ? (
           <div className="text-2xl">Loading memes...</div>
         ) : error ? (
-          <div className="text-xl text-red-400 text-center p-4">{error}</div>
+          <div className="flex flex-col items-center justify-center space-y-4 p-4 text-center">
+            <div className="text-xl text-red-400">{error}</div>
+            <button 
+              onClick={handleRetry}
+              className="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-full transition-all"
+            >
+              Try Again
+            </button>
+          </div>
         ) : isSessionEnded ? (
           <div className="flex flex-col items-center justify-center space-y-6 p-6 text-center">
             <h2 className="text-3xl font-bold">BRAIN FULLY ROTTED</h2>
@@ -156,7 +187,7 @@ function App() {
             </button>
           </div>
         ) : (
-          memes.length > 0 && (
+          memes.length > 0 && currentMemeIndex < memes.length && (
             <MemeCard 
               key={memes[currentMemeIndex].id}
               imageUrl={memes[currentMemeIndex].imageUrl}

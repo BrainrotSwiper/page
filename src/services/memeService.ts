@@ -45,26 +45,16 @@ const INAPPROPRIATE_WORDS = new Set([
 
 // Safe meme subreddits that typically have cleaner content
 const SUBREDDITS = [
-  'wholesomememes',
+  'memes',
   'dankmemes',
   'me_irl',
-  'meirl',
-  'memes',
+  'wholesomememes',
+  'funny',
+  'meme',
+  'ProgrammerHumor',
   'antimeme',
   'bonehurtingjuice',
-  'surrealmemes',
-  'historymemes',
-  'programmerhumor',
-  'techhumor',
-  'mathmemes',
-  'sciencememes',
-  'physicsmemes',
-  'chemistrymemes',
-  'biologymemes',
-  'engineeringmemes',
-  'speedoflobsters',
-  'antimeme',
-  'whenthe'
+  'surrealmemes'
 ];
 
 type SortType = 'hot' | 'new' | 'top' | 'rising';
@@ -100,8 +90,23 @@ const getRandomSortType = (): SortType => {
 };
 
 const getTimeParameter = (): string => {
-  const times = ['hour', 'day', 'week', 'month', 'year', 'all'];
+  const times = ['day', 'week', 'month'];
   return times[Math.floor(Math.random() * times.length)];
+};
+
+const isValidImageUrl = (url: string): boolean => {
+  return (
+    url.startsWith('https://i.redd.it/') || // Direct Reddit image
+    url.startsWith('https://preview.redd.it/') || // Reddit preview image
+    (
+      (url.endsWith('.jpg') ||
+      url.endsWith('.jpeg') ||
+      url.endsWith('.png') ||
+      url.endsWith('.gif')) &&
+      !url.includes('imgur.com/a/') && // Skip imgur albums
+      !url.includes('gallery') // Skip galleries
+    )
+  );
 };
 
 const containsInappropriateContent = (text: string): boolean => {
@@ -139,76 +144,88 @@ const containsInappropriateContent = (text: string): boolean => {
 export const fetchMemes = async (count: number = 25): Promise<Meme[]> => {
   try {
     // Get multiple subreddits for variety
-    const selectedSubreddits = getRandomSubreddits(4);
+    const selectedSubreddits = getRandomSubreddits(3);
     const sortType = getRandomSortType();
     const timeParam = sortType === 'top' ? `&t=${getTimeParameter()}` : '';
     
     // Fetch memes from multiple subreddits in parallel
     const memePromises = selectedSubreddits.map(async (subreddit) => {
-      const timestamp = Date.now(); // Cache busting
-      const response = await fetch(
-        `https://www.reddit.com/r/${subreddit}/${sortType}.json?limit=${count * 2}&timestamp=${timestamp}${timeParam}`
-      );
-      
-      if (!response.ok) {
-        throw new Error(`Failed to fetch from r/${subreddit}`);
+      try {
+        const response = await fetch(
+          `https://www.reddit.com/r/${subreddit}/${sortType}.json?limit=${count * 2}${timeParam}`,
+          {
+            headers: {
+              'Accept': 'application/json'
+            }
+          }
+        );
+        
+        if (!response.ok) {
+          console.warn(`Failed to fetch from r/${subreddit}: ${response.status}`);
+          return [];
+        }
+        
+        const data = await response.json();
+        
+        if (!data?.data?.children) {
+          console.warn(`Invalid data structure from r/${subreddit}`);
+          return [];
+        }
+        
+        return data.data.children
+          .filter((post: any) => {
+            try {
+              const url = post.data.url;
+              const id = post.data.id;
+              
+              // Skip if we've already shown this meme
+              if (usedMemeIds.has(id)) {
+                return false;
+              }
+              
+              // Basic filtering criteria
+              const isValid = (
+                !post.data.stickied && // Skip pinned posts
+                !post.data.over_18 && // Skip NSFW content
+                post.data.score > 50 && // Reasonable score threshold
+                !post.data.spoiler && // Skip spoiler content
+                !post.data.is_video && // Skip videos
+                isValidImageUrl(url) && // Validate image URL
+                post.data.title.length < 300 && // Skip extremely long titles
+                !containsInappropriateContent(post.data.title) && // Check title
+                !containsInappropriateContent(post.data.selftext || '') // Check post text
+              );
+
+              // Track used meme IDs
+              if (isValid) {
+                usedMemeIds.add(id);
+              }
+
+              return isValid;
+            } catch (err) {
+              console.warn('Error filtering post:', err);
+              return false;
+            }
+          })
+          .map((post: any) => ({
+            id: post.data.id,
+            imageUrl: post.data.url,
+            title: post.data.title,
+            subreddit: post.data.subreddit,
+            score: post.data.score,
+            nsfw: post.data.over_18
+          }));
+      } catch (err) {
+        console.warn(`Error fetching from r/${subreddit}:`, err);
+        return [];
       }
-      
-      const data = await response.json();
-      
-      return data.data.children
-        .filter((post: any) => {
-          const url = post.data.url;
-          const id = post.data.id;
-          
-          // Skip if we've already shown this meme
-          if (usedMemeIds.has(id)) {
-            return false;
-          }
-          
-          // Enhanced filtering criteria
-          const isValid = (
-            !post.data.stickied && // Skip pinned posts
-            !post.data.over_18 && // Skip NSFW content
-            post.data.score > 100 && // Minimum score threshold
-            !post.data.spoiler && // Skip spoiler content
-            !post.data.is_video && // Skip videos
-            !containsInappropriateContent(post.data.title) && // Check title
-            !containsInappropriateContent(post.data.selftext || '') && // Check post text
-            (
-              post.data.post_hint === 'image' ||
-              url.endsWith('.jpg') ||
-              url.endsWith('.jpeg') ||
-              url.endsWith('.png') ||
-              url.endsWith('.gif')
-            ) &&
-            !url.includes('gallery') && // Skip gallery posts
-            !url.includes('v.redd.it') && // Skip video posts
-            post.data.title.length < 300 && // Skip extremely long titles
-            !url.includes('imgur.com/a/') && // Skip imgur albums
-            !url.includes('/comments/') // Skip comment links
-          );
-
-          // Track used meme IDs
-          if (isValid) {
-            usedMemeIds.add(id);
-          }
-
-          return isValid;
-        })
-        .map((post: any) => ({
-          id: post.data.id,
-          imageUrl: post.data.url,
-          title: post.data.title,
-          subreddit: post.data.subreddit,
-          score: post.data.score,
-          nsfw: post.data.over_18
-        }));
     });
 
-    // Combine and shuffle memes from all subreddits
-    const allMemes = (await Promise.all(memePromises))
+    // Wait for all promises and handle failures
+    const results = await Promise.all(memePromises);
+    const allMemes = results
       .flat()
+      .filter(meme => meme && meme.imageUrl) // Ensure we have valid memes
       .sort(() => Math.random() - 0.5);
 
     // If we're running low on fresh memes, clear some history
@@ -217,7 +234,7 @@ export const fetchMemes = async (count: number = 25): Promise<Meme[]> => {
       oldestIds.forEach(id => usedMemeIds.delete(id));
     }
 
-    // Return requested number of memes
+    // Return requested number of memes, or all if we have fewer
     return allMemes.slice(0, count);
   } catch (error) {
     console.error('Error fetching memes:', error);
