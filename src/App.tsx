@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import MemeCard from './components/MemeCard';
-import { fetchMemes } from './services/memeService';
+import { fetchMemes, resetMemeTracking } from './services/memeService';
 import { Meme } from './types/meme';
 import './App.css';
 
@@ -16,12 +16,19 @@ function App() {
   // Load more memes when we're running low
   const loadMoreMemes = async () => {
     try {
+      setIsLoading(true);
       const newMemes = await fetchMemes(25);
+      if (newMemes.length === 0) {
+        setError('No more fresh memes found. Try resetting your brain.');
+        return;
+      }
       setMemes(prevMemes => [...prevMemes, ...newMemes]);
       setError(null);
     } catch (err) {
       setError('Failed to load more memes. Your brain might be too rotted.');
       console.error('Error loading memes:', err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -36,7 +43,7 @@ function App() {
       setBrainrotLevel(prev => prev + 1);
       
       // Move to next meme
-      if (currentMemeIndex < memes.length - 5) {
+      if (currentMemeIndex < memes.length - 10) { // Load earlier to ensure smooth transition
         setCurrentMemeIndex(prev => prev + 1);
       } else {
         // Load more memes when we're getting low
@@ -52,21 +59,41 @@ function App() {
   };
 
   // Reset the session
-  const handleReset = () => {
+  const handleReset = async () => {
+    setIsLoading(true);
     setMemes([]); // Clear existing memes
     setCurrentMemeIndex(0);
     setBrainrotLevel(0);
     setLaughCount(0);
     setIsSessionEnded(false);
-    setIsLoading(true); // Show loading state while fetching new memes
-    loadMoreMemes().then(() => setIsLoading(false)); // Load fresh memes
+    resetMemeTracking(); // Reset meme tracking
+    
+    try {
+      const freshMemes = await fetchMemes(25);
+      if (freshMemes.length === 0) {
+        setError('No fresh memes found. Try again later.');
+        return;
+      }
+      setMemes(freshMemes);
+      setError(null);
+    } catch (err) {
+      setError('Failed to load fresh memes. Try again.');
+      console.error('Error loading fresh memes:', err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Load initial memes on component mount
   useEffect(() => {
     const loadInitialMemes = async () => {
       try {
+        resetMemeTracking(); // Reset tracking on initial load
         const initialMemes = await fetchMemes(25);
+        if (initialMemes.length === 0) {
+          setError('No memes found. Try refreshing the page.');
+          return;
+        }
         setMemes(initialMemes);
         setError(null);
       } catch (err) {
